@@ -1,28 +1,43 @@
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import kotlin.Pair;
 import kotlin.Triple;
 import net.dv8tion.jda.api.JDABuilder;
+import net.dv8tion.jda.api.entities.User;
 import net.dv8tion.jda.api.entities.emoji.Emoji;
+import net.dv8tion.jda.api.events.guild.GuildReadyEvent;
+import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.events.user.UserActivityEndEvent;
 import net.dv8tion.jda.api.events.user.UserActivityStartEvent;
-import net.dv8tion.jda.api.events.user.update.UserUpdateNameEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import net.dv8tion.jda.api.interactions.commands.OptionMapping;
+import net.dv8tion.jda.api.interactions.commands.OptionType;
+import net.dv8tion.jda.api.interactions.commands.build.Commands;
+import net.dv8tion.jda.api.interactions.commands.build.OptionData;
 import net.dv8tion.jda.api.requests.GatewayIntent;
+import org.jetbrains.annotations.NotNull;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
+import org.mapdb.Serializer;
 
 public class Application extends ListenerAdapter {
-    public static final List<String> LEAGUE_REACTION_EMOJIS = List.of("U+1F92E", "U+1F913", "U+1F922");
+    public static final List<String> LEAGUE_REACTION_EMOJIS = List.of("🤮", "🤓", "🤢");
     public static final String BRUH_FUNNY_0 = "https://media.discordapp.net/attachments/1089873652008362014/1089873701140439070/bruhfunny0.gif?width=622&height=622";
+    public static final String BRUH_FUNNY_1 = "https://media.discordapp.net/attachments/1089873652008362014/1089875840642326538/bruhfunny1.gif?width=622&height=622";
     public static final String SHALL_NOT_BE_NAMED = "League of Legends";
-    public static final String KEYWORD = "~judge";
+    public static final String KEYWORD = "judgment";
 
     private static final DB DATABASE = DBMaker.fileDB("guilty_sinners.mapdb").transactionEnable().make();
-    private final Map<String, Double> judgmentTracker = new HashMap<>();
-    private final Map<String, Double> currentTimeTracker = new HashMap<>();
+    private static final Map<Long, Long> judgmentTracker = DATABASE.hashMap("judgmentTracker")
+        .keySerializer(Serializer.LONG)
+        .valueSerializer(Serializer.LONG)
+        .createOrOpen();
+    private static final Map<Long, Long> currentTimeTracker = DATABASE.hashMap("currentTracker")
+        .keySerializer(Serializer.LONG)
+        .valueSerializer(Serializer.LONG)
+        .createOrOpen();
 
     public static void main(String[] args) {
         JDABuilder.createDefault(args[0])
@@ -43,32 +58,43 @@ public class Application extends ListenerAdapter {
             }
             event.getMessage().reply(BRUH_FUNNY_0).queue();
         }
-        if (message.startsWith(KEYWORD)) {
-            this.judgeUser(message, event);
+    }
+
+    @Override
+    public void onSlashCommandInteraction(@NotNull SlashCommandInteractionEvent event) {
+        if (event.getName().equals(KEYWORD)) {
+            OptionMapping username = event.getOption("user");
+            if (username == null) {
+                event.reply("Must specify a user: '/" + KEYWORD + " [user]'.").queue();
+            } else {
+                judgeUser(username.getAsUser(), event);
+            }
         }
     }
 
-    private void judgeUser(String message, MessageReceivedEvent event) {
-        var user = message.substring(KEYWORD.length()).trim();
-        if (user.isEmpty()) {
-            event.getChannel().sendMessage("Must specify a user to judge: '" + KEYWORD + " [user]'").queue();
+    @Override
+    public void onGuildReady(@NotNull GuildReadyEvent event) {
+        var userOption = new OptionData(OptionType.USER, "user", "Pass judgment upon this user", true);
+        var judgmentCommand = Commands.slash("judgment", "Judge a user's League habits").addOptions(userOption);
+        event.getGuild().updateCommands().addCommands(judgmentCommand).queue();
+    }
+
+    private void judgeUser(User user, SlashCommandInteractionEvent event) {
+        var time = judgmentTracker.getOrDefault(user.getIdLong(), 0L);
+        if (time.equals(0L)) {
+            event.reply(user.getName() + " has not played " + SHALL_NOT_BE_NAMED + " to my knowledge. Good on them!").queue();
         } else {
-            var time = this.judgmentTracker.getOrDefault(user, 0.0);
-            if (time == 0.0) {
-                event.getChannel().sendMessage(user + " has not played " + SHALL_NOT_BE_NAMED + " to my knowledge. Good on them!").queue();
-            } else {
-                var isCurrentlyPlaying = this.currentTimeTracker.containsKey(user);
-                var convertedTime = this.getHoursMinutesSeconds(isCurrentlyPlaying
-                    ? time + System.currentTimeMillis() / 1000.0 - this.currentTimeTracker.getOrDefault(user, 0.0)
-                    : time
-                );
-                event.getChannel().sendMessage(user + " has played " + SHALL_NOT_BE_NAMED + " for "
-                    + convertedTime.getFirst() + " hours, "
-                    + convertedTime.getSecond() + " minutes, "
-                    + convertedTime.getThird() + " seconds"
-                    + (isCurrentlyPlaying ? ", and is currently playing L**gue!" : ". SAD!")
-                ).queue();
-            }
+            var isCurrentlyPlaying = currentTimeTracker.containsKey(user.getIdLong());
+            var convertedTime = getHoursMinutesSeconds(isCurrentlyPlaying
+                ? time + System.currentTimeMillis() / 1000 - currentTimeTracker.getOrDefault(user.getIdLong(), 0L)
+                : time
+            );
+            event.reply(user + " has played " + SHALL_NOT_BE_NAMED + " for "
+                + convertedTime.getFirst() + " hours, "
+                + convertedTime.getSecond() + " minutes, "
+                + convertedTime.getThird() + " seconds"
+                + (isCurrentlyPlaying ? ", and is currently playing L**gue!" : ". SAD!")
+            ).queue();
         }
     }
 
@@ -79,19 +105,15 @@ public class Application extends ListenerAdapter {
         return new Triple<>(hours, minutes, seconds);
     }
 
-    @Override
-    public void onUserUpdateName(UserUpdateNameEvent event) {
-        if (event.getUser().isBot()) {
-            return;
-        }
-        var oldName = event.getOldName();
-        var newName = event.getNewName();
-        if (this.judgmentTracker.containsKey(oldName)) {
-            this.judgmentTracker.put(newName, this.judgmentTracker.remove(oldName));
-        }
-        if (this.currentTimeTracker.containsKey(oldName)) {
-            this.currentTimeTracker.put(newName, this.currentTimeTracker.remove(oldName));
-        }
+    private void addEntryToTracker(Map<Long, Long> tracker, Pair<Long, Long> entry) {
+        tracker.put(entry.getFirst(), entry.getSecond());
+        DATABASE.commit();
+    }
+
+    private Long removeEntryFromTracker(Map<Long, Long> tracker, Long entryKey) {
+        var entryValue = tracker.remove(entryKey);
+        DATABASE.commit();
+        return entryValue;
     }
 
     @Override
@@ -100,17 +122,20 @@ public class Application extends ListenerAdapter {
             return;
         }
         if (event.getNewActivity().getName().equals(SHALL_NOT_BE_NAMED)) {
-            this.currentTimeTracker.put(event.getUser().getName(), System.currentTimeMillis() / 1000.0);
+            this.addEntryToTracker(currentTimeTracker, new Pair<>(event.getUser().getIdLong(), System.currentTimeMillis() / 1000));
         }
     }
 
     @Override
     public void onUserActivityEnd(UserActivityEndEvent event) {
-        if (event.getUser().isBot()) {
+        var user = event.getUser();
+        if (user.isBot()) {
             return;
         }
-        var lastTime = this.currentTimeTracker.remove(event.getUser().getName());
-        this.judgmentTracker.put(event.getUser().getName(),
-            this.judgmentTracker.getOrDefault(event.getUser().getName(), 0.0) + (System.currentTimeMillis() / 1000.0 - lastTime));
+        if (event.getOldActivity().getName().equals(SHALL_NOT_BE_NAMED) && currentTimeTracker.containsKey(user.getIdLong())) {
+            var lastTime = this.removeEntryFromTracker(currentTimeTracker, user.getIdLong());
+            this.addEntryToTracker(judgmentTracker, new Pair<>(user.getIdLong(),
+                judgmentTracker.getOrDefault(user.getIdLong(), 0L) + (System.currentTimeMillis() / 1000) - lastTime));
+        }
     }
 }
