@@ -28,6 +28,7 @@ public class Application extends ListenerAdapter {
     public static final String BRUH_FUNNY_1 = "https://media.discordapp.net/attachments/1089873652008362014/1089875840642326538/bruhfunny1.gif?width=622&height=622";
     public static final String SHALL_NOT_BE_NAMED = "League of Legends";
     public static final String KEYWORD = "judgment";
+    public static final String ALARM_WORD = "alarm";
 
     private static final DB DATABASE = DBMaker.fileDB("guilty_sinners.mapdb").transactionEnable().make();
     private static final Map<Long, Long> judgmentTracker = DATABASE.hashMap("judgmentTracker")
@@ -37,6 +38,10 @@ public class Application extends ListenerAdapter {
     private static final Map<Long, Long> currentTimeTracker = DATABASE.hashMap("currentTracker")
         .keySerializer(Serializer.LONG)
         .valueSerializer(Serializer.LONG)
+        .createOrOpen();
+    private static final Map<Long, Boolean> alarmPermissions = DATABASE.hashMap("alarmPermissions")
+        .keySerializer(Serializer.LONG)
+        .valueSerializer(Serializer.BOOLEAN)
         .createOrOpen();
 
     public static void main(String[] args) {
@@ -70,13 +75,17 @@ public class Application extends ListenerAdapter {
                 judgeUser(username.getAsUser(), event);
             }
         }
+        if (event.getName().equals(ALARM_WORD)) {
+            event.getGuild().getIdLong();
+        }
     }
 
     @Override
     public void onGuildReady(@NotNull GuildReadyEvent event) {
         var userOption = new OptionData(OptionType.USER, "user", "Pass judgment upon this user", true);
         var judgmentCommand = Commands.slash("judgment", "Judge a user's League habits").addOptions(userOption);
-        event.getGuild().updateCommands().addCommands(judgmentCommand).queue();
+        var alarmCommand = Commands.slash("alarm", "Toggle an alarm for when a user starts playing League");
+        event.getGuild().updateCommands().addCommands(judgmentCommand, alarmCommand).queue();
     }
 
     private void judgeUser(User user, SlashCommandInteractionEvent event) {
