@@ -18,6 +18,7 @@ import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.interactions.commands.build.OptionData;
 import net.dv8tion.jda.api.requests.GatewayIntent;
+import net.dv8tion.jda.api.utils.cache.CacheFlag;
 import org.jetbrains.annotations.NotNull;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
@@ -53,8 +54,13 @@ public class Application extends ListenerAdapter {
     public static void main(String[] args) {
         JDABuilder.createDefault(args[0])
             .addEventListeners(new Application())
-            .enableIntents(GatewayIntent.MESSAGE_CONTENT, GatewayIntent.GUILD_MESSAGE_REACTIONS, GatewayIntent.GUILD_PRESENCES)
-            .build();
+            .enableIntents(
+                GatewayIntent.MESSAGE_CONTENT,
+                GatewayIntent.GUILD_MESSAGE_REACTIONS,
+                GatewayIntent.GUILD_PRESENCES
+            ).enableCache(
+                CacheFlag.ACTIVITY
+            ).build();
     }
 
     @Override
@@ -74,6 +80,8 @@ public class Application extends ListenerAdapter {
     @Override
     public void onSlashCommandInteraction(@NotNull SlashCommandInteractionEvent event) {
         if (event.getName().equals(KEYWORD)) {
+            System.out.println(currentTimeTracker.entrySet());
+            System.out.println(judgmentTracker.entrySet());
             OptionMapping username = event.getOption("user");
             if (username == null) {
                 event.reply("Must specify a user: '/" + KEYWORD + " [user]'.").queue();
@@ -107,8 +115,8 @@ public class Application extends ListenerAdapter {
     }
 
     private void judgeUser(User user, SlashCommandInteractionEvent event) {
-        var time = judgmentTracker.getOrDefault(user.getIdLong(), 0L);
-        if (time.equals(0L)) {
+        var time = judgmentTracker.getOrDefault(user.getIdLong(), 0L) + currentTimeTracker.getOrDefault(user.getIdLong(), 0L);
+        if (time == 0L) {
             event.reply(user.getName() + " has not played " + SHALL_NOT_BE_NAMED + " to my knowledge. Good on them!").queue();
         } else {
             var isCurrentlyPlaying = currentTimeTracker.containsKey(user.getIdLong());
@@ -116,11 +124,11 @@ public class Application extends ListenerAdapter {
                 ? time + System.currentTimeMillis() / 1000 - currentTimeTracker.getOrDefault(user.getIdLong(), 0L)
                 : time
             );
-            event.reply(user + " has played " + SHALL_NOT_BE_NAMED + " for "
+            event.reply(user.getName() + " has played " + SHALL_NOT_BE_NAMED + " for "
                 + convertedTime.getFirst() + " hours, "
                 + convertedTime.getSecond() + " minutes, "
                 + convertedTime.getThird() + " seconds"
-                + (isCurrentlyPlaying ? ", and is currently playing L**gue!" + BRUH_FUNNY_1 : ". SAD!")
+                + (isCurrentlyPlaying ? ", and is currently playing L**gue!" + '\n' + BRUH_FUNNY_1 : ". SAD!")
             ).queue();
         }
     }
@@ -149,15 +157,16 @@ public class Application extends ListenerAdapter {
 
     @Override
     public void onUserActivityStart(UserActivityStartEvent event) {
-        if (event.getUser().isBot()) {
+        var user = event.getUser();
+        if (user.isBot()) {
             return;
         }
-        if (event.getNewActivity().getName().equals(SHALL_NOT_BE_NAMED)) {
-            this.addEntryToTracker(currentTimeTracker, new Pair<>(event.getUser().getIdLong(), System.currentTimeMillis() / 1000));
+        if (event.getNewActivity().getName().equals(SHALL_NOT_BE_NAMED) && !currentTimeTracker.containsKey(user.getIdLong())) {
+            this.addEntryToTracker(currentTimeTracker, new Pair<>(user.getIdLong(), System.currentTimeMillis() / 1000));
             if (this.getEntryFromTracker(alarmPermissions, event.getGuild().getIdLong())) {
                 var channelID = this.getEntryFromTracker(alarmChannels, event.getGuild().getIdLong());
                 event.getGuild().getTextChannelById(channelID).sendMessage(
-                    event.getUser().getAsMention() + " has started playing L**gue!" + BRUH_FUNNY_1).queue();
+                    user.getName() + " has started playing L**gue!" + '\n' + BRUH_FUNNY_1).queue();
             }
         }
     }
