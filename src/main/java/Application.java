@@ -9,6 +9,7 @@ import kotlin.Triple;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.entities.Activity;
 import net.dv8tion.jda.api.entities.User;
+import net.dv8tion.jda.api.entities.channel.ChannelType;
 import net.dv8tion.jda.api.events.guild.GuildReadyEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
@@ -87,25 +88,24 @@ public class Application extends ListenerAdapter {
         switch (event.getName()) {
             case KEYWORD -> {
                 OptionMapping username = event.getOption("user");
-                if (username == null) {
-                    event.reply("Must specify a user: '/" + KEYWORD + " [user]'.").queue();
-                } else {
-                    judgeUser(username.getAsUser(), event);
-                }
+                judgeUser(username.getAsUser(), event);
             }
             case SET_ALARM -> {
                 var guildID = event.getGuild().getIdLong();
-                OptionMapping channel = event.getOption("switch");
-                var currentPermission = channel != null && channel.getAsBoolean();
+                var currentPermission = event.getOption("switch").getAsBoolean();
                 this.addEntryToTracker(alarmPermissions, new Pair<>(guildID, currentPermission));
                 event.reply("Anti-League Alarm is now " + (currentPermission ? "" : "DIS") + "ARMED!").queue();
             }
             case SET_CHANNEL -> {
                 var guildID = event.getGuild().getIdLong();
-                OptionMapping channel = event.getOption("channel");
-                var channelID = channel == null ? event.getChannel().getIdLong() : channel.getAsChannel().getIdLong();
-                this.addEntryToTracker(alarmChannels, new Pair<>(guildID, channelID));
-                event.reply("Anti-League Alarm will now warn in channel: " + event.getGuild().getTextChannelById(channelID).getName()).queue();
+                var channel = event.getOption("channel").getAsChannel();
+                if (channel.getType() != ChannelType.TEXT) {
+                    event.reply("Must specify a text channel!").queue();
+                } else {
+                    var channelID = channel.getIdLong();
+                    this.addEntryToTracker(alarmChannels, new Pair<>(guildID, channelID));
+                    event.reply("Anti-League Alarm will now warn in channel: " + event.getGuild().getTextChannelById(channelID).getName()).queue();
+                }
             }
         }
     }
@@ -141,8 +141,8 @@ public class Application extends ListenerAdapter {
     @Override
     public void onGuildReady(@NotNull GuildReadyEvent event) {
         var userOption = new OptionData(OptionType.USER, "user", "Pass judgment upon this user", true);
-        var channelOption = new OptionData(OptionType.CHANNEL, "channel", "Alarm will warn in this channel", true);
-        var switchOption = new OptionData(OptionType.BOOLEAN, "switch", "Turn the alarm on or off", true);
+        var channelOption = new OptionData(OptionType.CHANNEL, "channel", "Alarm will send warnings to this channel", true);
+        var switchOption = new OptionData(OptionType.BOOLEAN, "switch", "Should the alarm send warnings?", true);
 
         var judgmentCommand = Commands.slash(KEYWORD, "Judge a user's League habits").addOptions(userOption);
         var setChannelCommand = Commands.slash(SET_CHANNEL, "Set the channel for the alarm to warn in").addOptions(channelOption);
