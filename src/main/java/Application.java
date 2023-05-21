@@ -5,6 +5,7 @@ import java.util.logging.Logger;
 import kotlin.Pair;
 import kotlin.Triple;
 import net.dv8tion.jda.api.JDABuilder;
+import net.dv8tion.jda.api.entities.Activity;
 import net.dv8tion.jda.api.entities.User;
 import net.dv8tion.jda.api.entities.emoji.Emoji;
 import net.dv8tion.jda.api.events.guild.GuildReadyEvent;
@@ -33,7 +34,6 @@ public class Application extends ListenerAdapter {
     public static final String KEYWORD = "judgment";
     public static final String SET_ALARM = "set_alarm";
     public static final String SET_CHANNEL = "set_channel";
-    public static final String SET_GAME = "set_game";
 
     public static final Logger LOGGER = Logger.getLogger("Logger");
 
@@ -109,13 +109,6 @@ public class Application extends ListenerAdapter {
             this.addEntryToTracker(alarmPermissions, new Pair<>(guildID, currentPermission));
             event.reply("Anti-League Alarm is now " + (currentPermission ? "" : "DIS") + "ARMED").queue();
         }
-        else if (event.getName().equals(SET_GAME)) {
-            var guildID = event.getGuild().getIdLong();
-            OptionMapping game = event.getOption("game");
-            var gameName = game.getAsString();
-            this.addEntryToTracker(currentGameTracker, new Pair<>(guildID, gameName));
-            event.reply("Anti-League Alarm is now tracking: " + gameName).queue();
-        }
     }
 
     @Override
@@ -123,34 +116,38 @@ public class Application extends ListenerAdapter {
         var userOption = new OptionData(OptionType.USER, "user", "Pass judgment upon this user", true);
         var channelOption = new OptionData(OptionType.CHANNEL, "channel", "Alarm will warn in this channel", true);
         var switchOption = new OptionData(OptionType.BOOLEAN, "switch", "Turn the alarm on or off", true);
-        var gameOption = new OptionData(OptionType.STRING, "game", "Set the game to be tracked and judged", true);
 
         var judgmentCommand = Commands.slash(KEYWORD, "Judge a user's League habits").addOptions(userOption);
         var setChannelCommand = Commands.slash(SET_CHANNEL, "Set the channel for the alarm to warn in").addOptions(channelOption);
         var alarmCommand = Commands.slash(SET_ALARM, "Toggle an alarm that warns when a user starts playing League").addOptions(switchOption);
-        var gameCommand = Commands.slash(SET_GAME, "Set the game to be tracked and judged").addOptions(gameOption);
-        event.getGuild().updateCommands().addCommands(judgmentCommand, alarmCommand, setChannelCommand, gameCommand).queue();
+        event.getGuild().updateCommands().addCommands(judgmentCommand, alarmCommand, setChannelCommand).queue();
     }
 
     private void judgeUser(User user, SlashCommandInteractionEvent event) {
-        var time = judgmentTracker.getOrDefault(user.getIdLong(), 0L) + currentTimeTracker.getOrDefault(user.getIdLong(), 0L);
-        if (time == 0L) {
-            event.reply(user.getName() + " has not played " + SHALL_NOT_BE_NAMED + " to my knowledge. Good on them!").queue();
+        var permaTime = judgmentTracker.getOrDefault(user.getIdLong(), 0L);
+        var currentTime = currentTimeTracker.getOrDefault(user.getIdLong(), 0L);
+        if (permaTime + currentTime == 0L) {
+            event.reply(user.getName() + " has not played " + SHALL_NOT_BE_NAMED + ", to my knowledge. Good!").queue();
         } else {
             var isCurrentlyPlaying = currentTimeTracker.containsKey(user.getIdLong());
+
+            //debug
+            var x = permaTime;
+            var y = System.currentTimeMillis() / 1000;
+            var z = currentTimeTracker.getOrDefault(user.getIdLong(), 0L);
+            var xyz = permaTime + (System.currentTimeMillis() / 1000) - currentTimeTracker.getOrDefault(user.getIdLong(), 0L);
+
             var convertedTime = getHoursMinutesSeconds(isCurrentlyPlaying
-                ? time + System.currentTimeMillis() / 1000 - currentTimeTracker.getOrDefault(user.getIdLong(), 0L)
-                : time
+                ? permaTime + (System.currentTimeMillis() / 1000) - currentTimeTracker.getOrDefault(user.getIdLong(), 0L)
+                : permaTime
             );
             event.reply(user.getName() + " has played " + SHALL_NOT_BE_NAMED + " for "
                 + convertedTime.getFirst() + " hours, "
                 + convertedTime.getSecond() + " minutes, "
                 + convertedTime.getThird() + " seconds"
-                + (isCurrentlyPlaying ? ", and is currently playing L**gue!" : ".")
+                + (isCurrentlyPlaying ? ", and is currently playing L**gue!" : ". SAD!")
             ).queue();
-            if (isCurrentlyPlaying) {
-                 event.getChannel().sendMessage(BRUH_FUNNY_1).queue();
-            }
+            event.getChannel().sendMessage(isCurrentlyPlaying ? BRUH_FUNNY_1 : BRUH_FUNNY_0).queue();
         }
     }
 
@@ -174,39 +171,40 @@ public class Application extends ListenerAdapter {
 
     @Override
     public void onUserActivityStart(UserActivityStartEvent event) {
+    }
+
+    @Override
+    public void onUserActivityEnd(UserActivityEndEvent event) {
+    }
+
+    @Override
+    public void onUserUpdateActivities(@NotNull UserUpdateActivitiesEvent event) {
         var user = event.getUser();
         if (user.isBot()) {
             return;
         }
-        LOGGER.info(event.getNewActivity().getName());
-        if (event.getNewActivity().getName().equals(SHALL_NOT_BE_NAMED) && !currentTimeTracker.containsKey(user.getIdLong())) {
+        var prevActivities = event.getOldValue();
+        var newActivities = event.getNewValue();
+
+        LOGGER.info(prevActivities.toString());
+        LOGGER.info(newActivities.toString());
+
+        if (newActivities.contains(Activity.playing(SHALL_NOT_BE_NAMED)) && !prevActivities.contains(Activity.playing(SHALL_NOT_BE_NAMED))) {
             this.addEntryToTracker(currentTimeTracker, new Pair<>(user.getIdLong(), System.currentTimeMillis() / 1000));
-            if (alarmPermissions.get(event.getGuild().getIdLong())) {
+            if (alarmPermissions.getOrDefault(event.getGuild().getIdLong(), false)) {
                 var channelID = alarmChannels.get(event.getGuild().getIdLong());
                 event.getGuild().getTextChannelById(channelID).sendMessage(user.getName() + " has started playing L**gue!").queue();
                 event.getGuild().getTextChannelById(channelID).sendMessage(BRUH_FUNNY_1).queue();
             }
         }
-    }
-
-    @Override
-    public void onUserActivityEnd(UserActivityEndEvent event) {
-        var user = event.getUser();
-        if (user.isBot()) {
-            return;
-        }
-        LOGGER.info(event.getOldActivity().getName());
-        if (event.getOldActivity().getName().equals(SHALL_NOT_BE_NAMED) && currentTimeTracker.containsKey(user.getIdLong())) {
+        if (prevActivities.contains(Activity.playing(SHALL_NOT_BE_NAMED)) && !newActivities.contains(Activity.playing(SHALL_NOT_BE_NAMED))) {
             var lastTime = this.removeEntryFromTracker(currentTimeTracker, user.getIdLong());
             this.addEntryToTracker(judgmentTracker, new Pair<>(user.getIdLong(),
                 judgmentTracker.getOrDefault(user.getIdLong(), 0L) + (System.currentTimeMillis() / 1000) - lastTime));
         }
     }
 
-    @Override
-    public void onUserUpdateActivities(@NotNull UserUpdateActivitiesEvent event) {
-        LOGGER.info(event.getNewValue().toString());
-        LOGGER.info(event.getOldValue().toString());
-        super.onUserUpdateActivities(event);
+    public static int getSystemTimeSeconds() {
+        return (int) (System.currentTimeMillis() / 1000);
     }
 }
