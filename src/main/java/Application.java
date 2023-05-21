@@ -1,17 +1,18 @@
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
 
 import kotlin.Pair;
 import kotlin.Triple;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.entities.User;
-import net.dv8tion.jda.api.entities.channel.ChannelType;
 import net.dv8tion.jda.api.entities.emoji.Emoji;
 import net.dv8tion.jda.api.events.guild.GuildReadyEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.events.user.UserActivityEndEvent;
 import net.dv8tion.jda.api.events.user.UserActivityStartEvent;
+import net.dv8tion.jda.api.events.user.update.UserUpdateActivitiesEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.interactions.commands.OptionMapping;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
@@ -30,8 +31,11 @@ public class Application extends ListenerAdapter {
     public static final String BRUH_FUNNY_1 = "https://media.discordapp.net/attachments/1089873652008362014/1089875840642326538/bruhfunny1.gif?width=622&height=622";
     public static final String SHALL_NOT_BE_NAMED = "League of Legends";
     public static final String KEYWORD = "judgment";
-    public static final String ALARM_WORD = "alarm";
-    public static final String ALARM_CHANNEL = "set_channel";
+    public static final String SET_ALARM = "set_alarm";
+    public static final String SET_CHANNEL = "set_channel";
+    public static final String SET_GAME = "set_game";
+
+    public static final Logger LOGGER = Logger.getLogger("Logger");
 
     private static final DB DATABASE = DBMaker.fileDB("guilty_sinners.mapdb").transactionEnable().make();
     private static final Map<Long, Long> judgmentTracker = DATABASE.hashMap("judgmentTracker")
@@ -41,6 +45,10 @@ public class Application extends ListenerAdapter {
     private static final Map<Long, Long> currentTimeTracker = DATABASE.hashMap("currentTracker")
         .keySerializer(Serializer.LONG)
         .valueSerializer(Serializer.LONG)
+        .createOrOpen();
+    private static final Map<Long, String> currentGameTracker = DATABASE.hashMap("currentGameTracker")
+        .keySerializer(Serializer.LONG)
+        .valueSerializer(Serializer.STRING)
         .createOrOpen();
     private static final Map<Long, Boolean> alarmPermissions = DATABASE.hashMap("alarmPermissions")
         .keySerializer(Serializer.LONG)
@@ -80,8 +88,6 @@ public class Application extends ListenerAdapter {
     @Override
     public void onSlashCommandInteraction(@NotNull SlashCommandInteractionEvent event) {
         if (event.getName().equals(KEYWORD)) {
-            System.out.println(currentTimeTracker.entrySet());
-            System.out.println(judgmentTracker.entrySet());
             OptionMapping username = event.getOption("user");
             if (username == null) {
                 event.reply("Must specify a user: '/" + KEYWORD + " [user]'.").queue();
@@ -89,18 +95,26 @@ public class Application extends ListenerAdapter {
                 judgeUser(username.getAsUser(), event);
             }
         }
-        else if (event.getName().equals(ALARM_CHANNEL)) {
+        else if (event.getName().equals(SET_CHANNEL)) {
             var guildID = event.getGuild().getIdLong();
             OptionMapping channel = event.getOption("channel");
             var channelID = channel == null ? event.getChannel().getIdLong() : channel.getAsChannel().getIdLong();
             this.addEntryToTracker(alarmChannels, new Pair<>(guildID, channelID));
             event.reply("Anti-League Alarm will now warn in channel: " + event.getGuild().getTextChannelById(channelID).getName()).queue();
         }
-        else if (event.getName().equals(ALARM_WORD)) {
+        else if (event.getName().equals(SET_ALARM)) {
             var guildID = event.getGuild().getIdLong();
-            var currentPermission = alarmPermissions.getOrDefault(guildID, false);
-            this.addEntryToTracker(alarmPermissions, new Pair<>(guildID, !currentPermission));
-            event.reply("Anti-League Alarm is now " + (!currentPermission ? "" : "DIS") + "ARMED").queue();
+            OptionMapping channel = event.getOption("switch");
+            var currentPermission = channel.getAsBoolean();
+            this.addEntryToTracker(alarmPermissions, new Pair<>(guildID, currentPermission));
+            event.reply("Anti-League Alarm is now " + (currentPermission ? "" : "DIS") + "ARMED").queue();
+        }
+        else if (event.getName().equals(SET_GAME)) {
+            var guildID = event.getGuild().getIdLong();
+            OptionMapping game = event.getOption("game");
+            var gameName = game.getAsString();
+            this.addEntryToTracker(currentGameTracker, new Pair<>(guildID, gameName));
+            event.reply("Anti-League Alarm is now tracking: " + gameName).queue();
         }
     }
 
@@ -108,10 +122,14 @@ public class Application extends ListenerAdapter {
     public void onGuildReady(@NotNull GuildReadyEvent event) {
         var userOption = new OptionData(OptionType.USER, "user", "Pass judgment upon this user", true);
         var channelOption = new OptionData(OptionType.CHANNEL, "channel", "Alarm will warn in this channel", true);
+        var switchOption = new OptionData(OptionType.BOOLEAN, "switch", "Turn the alarm on or off", true);
+        var gameOption = new OptionData(OptionType.STRING, "game", "Set the game to be tracked and judged", true);
+
         var judgmentCommand = Commands.slash(KEYWORD, "Judge a user's League habits").addOptions(userOption);
-        var setChannelCommand = Commands.slash(ALARM_CHANNEL, "Set the channel for the alarm to warn in").addOptions(channelOption);
-        var alarmCommand = Commands.slash(ALARM_WORD, "Toggle an alarm that warns when a user starts playing League");
-        event.getGuild().updateCommands().addCommands(judgmentCommand, alarmCommand, setChannelCommand).queue();
+        var setChannelCommand = Commands.slash(SET_CHANNEL, "Set the channel for the alarm to warn in").addOptions(channelOption);
+        var alarmCommand = Commands.slash(SET_ALARM, "Toggle an alarm that warns when a user starts playing League").addOptions(switchOption);
+        var gameCommand = Commands.slash(SET_GAME, "Set the game to be tracked and judged").addOptions(gameOption);
+        event.getGuild().updateCommands().addCommands(judgmentCommand, alarmCommand, setChannelCommand, gameCommand).queue();
     }
 
     private void judgeUser(User user, SlashCommandInteractionEvent event) {
@@ -128,8 +146,11 @@ public class Application extends ListenerAdapter {
                 + convertedTime.getFirst() + " hours, "
                 + convertedTime.getSecond() + " minutes, "
                 + convertedTime.getThird() + " seconds"
-                + (isCurrentlyPlaying ? ", and is currently playing L**gue!" + '\n' + BRUH_FUNNY_1 : ". SAD!")
+                + (isCurrentlyPlaying ? ", and is currently playing L**gue!" : ".")
             ).queue();
+            if (isCurrentlyPlaying) {
+                 event.getChannel().sendMessage(BRUH_FUNNY_1).queue();
+            }
         }
     }
 
@@ -151,22 +172,19 @@ public class Application extends ListenerAdapter {
         return entryValue;
     }
 
-    private <T> T getEntryFromTracker(Map<Long, T> tracker, Long entryKey) {
-        return tracker.get(entryKey);
-    }
-
     @Override
     public void onUserActivityStart(UserActivityStartEvent event) {
         var user = event.getUser();
         if (user.isBot()) {
             return;
         }
+        LOGGER.info(event.getNewActivity().getName());
         if (event.getNewActivity().getName().equals(SHALL_NOT_BE_NAMED) && !currentTimeTracker.containsKey(user.getIdLong())) {
             this.addEntryToTracker(currentTimeTracker, new Pair<>(user.getIdLong(), System.currentTimeMillis() / 1000));
-            if (this.getEntryFromTracker(alarmPermissions, event.getGuild().getIdLong())) {
-                var channelID = this.getEntryFromTracker(alarmChannels, event.getGuild().getIdLong());
-                event.getGuild().getTextChannelById(channelID).sendMessage(
-                    user.getName() + " has started playing L**gue!" + '\n' + BRUH_FUNNY_1).queue();
+            if (alarmPermissions.get(event.getGuild().getIdLong())) {
+                var channelID = alarmChannels.get(event.getGuild().getIdLong());
+                event.getGuild().getTextChannelById(channelID).sendMessage(user.getName() + " has started playing L**gue!").queue();
+                event.getGuild().getTextChannelById(channelID).sendMessage(BRUH_FUNNY_1).queue();
             }
         }
     }
@@ -177,10 +195,18 @@ public class Application extends ListenerAdapter {
         if (user.isBot()) {
             return;
         }
+        LOGGER.info(event.getOldActivity().getName());
         if (event.getOldActivity().getName().equals(SHALL_NOT_BE_NAMED) && currentTimeTracker.containsKey(user.getIdLong())) {
             var lastTime = this.removeEntryFromTracker(currentTimeTracker, user.getIdLong());
             this.addEntryToTracker(judgmentTracker, new Pair<>(user.getIdLong(),
                 judgmentTracker.getOrDefault(user.getIdLong(), 0L) + (System.currentTimeMillis() / 1000) - lastTime));
         }
+    }
+
+    @Override
+    public void onUserUpdateActivities(@NotNull UserUpdateActivitiesEvent event) {
+        LOGGER.info(event.getNewValue().toString());
+        LOGGER.info(event.getOldValue().toString());
+        super.onUserUpdateActivities(event);
     }
 }
