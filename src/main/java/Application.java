@@ -1,16 +1,10 @@
-import java.util.List;
-import java.util.Map;
-import java.util.logging.Logger;
-
-import javax.annotation.Nonnull;
-
 import kotlin.Pair;
 import kotlin.Triple;
+import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.entities.Activity;
 import net.dv8tion.jda.api.entities.User;
 import net.dv8tion.jda.api.entities.channel.ChannelType;
-import net.dv8tion.jda.api.events.guild.GuildReadyEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.events.user.update.UserUpdateActivitiesEvent;
@@ -25,6 +19,11 @@ import org.jetbrains.annotations.NotNull;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
 import org.mapdb.Serializer;
+
+import javax.annotation.Nonnull;
+import java.util.List;
+import java.util.Map;
+import java.util.logging.Logger;
 
 public class Application extends ListenerAdapter {
     public static final List<String> LEAGUE_REACTION_EMOJIS = List.of("🤮", "🤓", "🤢");
@@ -56,7 +55,7 @@ public class Application extends ListenerAdapter {
         .createOrOpen();
 
     public static void main(String[] args) {
-        JDABuilder.createDefault(args[0])
+        var jda = JDABuilder.createDefault(args[0])
             .addEventListeners(new Application())
             .enableIntents(
                 GatewayIntent.MESSAGE_CONTENT,
@@ -65,6 +64,7 @@ public class Application extends ListenerAdapter {
             ).enableCache(
                 CacheFlag.ACTIVITY
             ).build();
+        registerCommands(jda);
     }
 
     @Override
@@ -138,16 +138,15 @@ public class Application extends ListenerAdapter {
         return new Triple<>(hours, minutes, seconds);
     }
 
-    @Override
-    public void onGuildReady(@NotNull GuildReadyEvent event) {
+    private static void registerCommands(JDA jda) {
         var userOption = new OptionData(OptionType.USER, "user", "Pass judgment upon this user", true);
         var channelOption = new OptionData(OptionType.CHANNEL, "channel", "Alarm will send warnings to this channel", true);
         var switchOption = new OptionData(OptionType.BOOLEAN, "switch", "Should the alarm send warnings?", true);
 
-        var judgmentCommand = Commands.slash(KEYWORD, "Judge a user's League habits").addOptions(userOption);
-        var setChannelCommand = Commands.slash(SET_CHANNEL, "Set the channel for the alarm to warn in").addOptions(channelOption);
-        var alarmCommand = Commands.slash(SET_ALARM, "Toggle an alarm that warns when a user starts playing League").addOptions(switchOption);
-        event.getGuild().updateCommands().addCommands(judgmentCommand, alarmCommand, setChannelCommand).queue();
+        var judgmentCommand = Commands.slash(KEYWORD, "Judge a user's League habits").setGuildOnly(true).addOptions(userOption);
+        var setChannelCommand = Commands.slash(SET_CHANNEL, "Set the channel for the alarm to warn in").setGuildOnly(true).addOptions(channelOption);
+        var alarmCommand = Commands.slash(SET_ALARM, "Toggle an alarm that warns when a user starts playing League").setGuildOnly(true).addOptions(switchOption);
+        jda.updateCommands().addCommands(judgmentCommand, alarmCommand, setChannelCommand).queue();
     }
 
     @Override
