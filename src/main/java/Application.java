@@ -2,6 +2,7 @@ import kotlin.Pair;
 import kotlin.Triple;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
+import net.dv8tion.jda.api.Permission;
 import net.dv8tion.jda.api.entities.Activity;
 import net.dv8tion.jda.api.entities.User;
 import net.dv8tion.jda.api.entities.channel.ChannelType;
@@ -9,6 +10,7 @@ import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEve
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.events.user.update.UserUpdateActivitiesEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import net.dv8tion.jda.api.interactions.commands.DefaultMemberPermissions;
 import net.dv8tion.jda.api.interactions.commands.OptionMapping;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
@@ -143,9 +145,21 @@ public class Application extends ListenerAdapter {
         var channelOption = new OptionData(OptionType.CHANNEL, "channel", "Alarm will send warnings to this channel", true);
         var switchOption = new OptionData(OptionType.BOOLEAN, "switch", "Should the alarm send warnings?", true);
 
-        var judgmentCommand = Commands.slash(KEYWORD, "Judge a user's League habits").setGuildOnly(true).addOptions(userOption);
-        var setChannelCommand = Commands.slash(SET_CHANNEL, "Set the channel for the alarm to warn in").setGuildOnly(true).addOptions(channelOption);
-        var alarmCommand = Commands.slash(SET_ALARM, "Toggle an alarm that warns when a user starts playing League").setGuildOnly(true).addOptions(switchOption);
+        var judgmentCommand = Commands.slash(KEYWORD, "Judge a user's League habits")
+            .setGuildOnly(true)
+            .addOptions(userOption);
+        var setChannelCommand = Commands.slash(SET_CHANNEL, "Set the channel for the alarm to warn in")
+            .setGuildOnly(true)
+            .setDefaultPermissions(DefaultMemberPermissions.enabledFor(
+                Permission.MANAGE_CHANNEL
+            ))
+            .addOptions(channelOption);
+        var alarmCommand = Commands.slash(SET_ALARM, "Toggle an alarm that warns when a user starts playing League")
+            .setGuildOnly(true)
+            .setDefaultPermissions(DefaultMemberPermissions.enabledFor(
+                Permission.MANAGE_CHANNEL
+            ))
+            .addOptions(switchOption);
         jda.updateCommands().addCommands(judgmentCommand, alarmCommand, setChannelCommand).queue();
     }
 
