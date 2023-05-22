@@ -1,20 +1,41 @@
 plugins {
     id 'java'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
 }
 
 group 'net.fenn7'
-version '1.0-SNAPSHOT'
+version '1.0.0'
 
 repositories {
     mavenCentral()
-    jcenter()
 }
 
 dependencies {
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.1'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.8.1'
-    implementation('net.dv8tion:JDA:5.0.0-beta.5')
-    implementation('org.mapdb:mapdb:3.0.9')
+    implementation 'net.dv8tion:JDA:5.0.0-beta.9'
+    implementation 'org.mapdb:mapdb:3.0.9'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.3'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.9.3'
+}
+
+jar {
+    enabled = false
+}
+
+shadowJar {
+    archiveClassifier = ''
+    mergeServiceFiles()
+    minimize {
+        exclude dependency('org.apache.logging.log4j:.*:.*')
+        exclude dependency('org.mapdb:.*:.*')
+    }
+    manifest {
+        attributes 'Main-Class': 'Application'
+    }
+}
+
+build {
+    dependsOn shadowJar
 }
 
 test {
