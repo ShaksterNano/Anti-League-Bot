@@ -188,7 +188,7 @@ public class Application extends ListenerAdapter {
             this.addEntryToTracker(currentTimeTracker, new Pair<>(user.getIdLong(), AntiLeagueHelper.getSysTimeInSecondsLong()));
             if (alarmPermissions.getOrDefault(event.getGuild().getIdLong(), false)) {
                 var channelID = alarmChannels.getOrDefault(event.getGuild().getIdLong(), 0L);
-                if (channelID != 0L) {
+                if (!channelID.equals(0L)) {
                     event.getGuild().getTextChannelById(channelID).sendMessage(user.getName() + " has started playing L**gue!").queue();
                     event.getGuild().getTextChannelById(channelID).sendMessage(BRUH_FUNNY_1).queue();
                 }
