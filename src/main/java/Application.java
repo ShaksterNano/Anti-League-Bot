@@ -1,3 +1,8 @@
+import java.util.List;
+import java.util.Map;
+
+import javax.annotation.Nonnull;
+
 import kotlin.Pair;
 import kotlin.Triple;
 import net.dv8tion.jda.api.JDA;
@@ -24,10 +29,6 @@ import org.mapdb.DBMaker;
 import org.mapdb.Serializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import javax.annotation.Nonnull;
-import java.util.List;
-import java.util.Map;
 
 public class Application extends ListenerAdapter {
     public static final List<String> LEAGUE_REACTION_EMOJIS = List.of("🤮", "🤓", "🤢");
@@ -186,8 +187,8 @@ public class Application extends ListenerAdapter {
             LOGGER.info(user.getName() + user.getDiscriminator() + " has started playing " + SHALL_NOT_BE_NAMED);
             this.addEntryToTracker(currentTimeTracker, new Pair<>(user.getIdLong(), AntiLeagueHelper.getSysTimeInSecondsLong()));
             if (alarmPermissions.getOrDefault(event.getGuild().getIdLong(), false)) {
-                var channelID = alarmChannels.get(event.getGuild().getIdLong());
-                if (channelID != null) {
+                var channelID = alarmChannels.getOrDefault(event.getGuild().getIdLong(), 0L);
+                if (channelID != 0L) {
                     event.getGuild().getTextChannelById(channelID).sendMessage(user.getName() + " has started playing L**gue!").queue();
                     event.getGuild().getTextChannelById(channelID).sendMessage(BRUH_FUNNY_1).queue();
                 }
