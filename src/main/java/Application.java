@@ -16,16 +16,18 @@ import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.interactions.commands.build.OptionData;
 import net.dv8tion.jda.api.requests.GatewayIntent;
+import net.dv8tion.jda.api.utils.MemberCachePolicy;
 import net.dv8tion.jda.api.utils.cache.CacheFlag;
 import org.jetbrains.annotations.NotNull;
 import org.mapdb.DB;
 import org.mapdb.DBMaker;
 import org.mapdb.Serializer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
 import java.util.List;
 import java.util.Map;
-import java.util.logging.Logger;
 
 public class Application extends ListenerAdapter {
     public static final List<String> LEAGUE_REACTION_EMOJIS = List.of("🤮", "🤓", "🤢");
@@ -36,9 +38,12 @@ public class Application extends ListenerAdapter {
     public static final String SET_ALARM = "set_alarm";
     public static final String SET_CHANNEL = "set_channel";
 
-    public static final Logger LOGGER = Logger.getLogger("Logger");
+    public static final Logger LOGGER = LoggerFactory.getLogger("Anti League Bot");
 
-    public static final DB DATABASE = DBMaker.fileDB("guilty_sinners.mapdb").transactionEnable().make();
+    public static final DB DATABASE = DBMaker.fileDB("guilty_sinners.mapdb")
+        .transactionEnable()
+        .closeOnJvmShutdown()
+        .make();
     public static final Map<Long, Long> judgmentTracker = DATABASE.hashMap("judgmentTracker")
         .keySerializer(Serializer.LONG)
         .valueSerializer(Serializer.LONG)
@@ -64,8 +69,10 @@ public class Application extends ListenerAdapter {
                 GatewayIntent.GUILD_MESSAGE_REACTIONS,
                 GatewayIntent.GUILD_PRESENCES
             ).enableCache(
-                CacheFlag.ACTIVITY
-            ).build();
+                CacheFlag.ACTIVITY,
+                CacheFlag.ONLINE_STATUS
+            ).setMemberCachePolicy(MemberCachePolicy.ONLINE)
+            .build();
         registerCommands(jda);
     }
 
@@ -176,6 +183,7 @@ public class Application extends ListenerAdapter {
         var isPlayingLeague = newActivities != null && newActivities.contains(Activity.playing(SHALL_NOT_BE_NAMED));
 
         if (isPlayingLeague && !hasPlayedLeague) {
+            LOGGER.info(user.getName() + user.getDiscriminator() + " has started playing " + SHALL_NOT_BE_NAMED);
             this.addEntryToTracker(currentTimeTracker, new Pair<>(user.getIdLong(), AntiLeagueHelper.getSysTimeInSecondsLong()));
             if (alarmPermissions.getOrDefault(event.getGuild().getIdLong(), false)) {
                 var channelID = alarmChannels.get(event.getGuild().getIdLong());
@@ -186,6 +194,7 @@ public class Application extends ListenerAdapter {
             }
         }
         else if (!isPlayingLeague && hasPlayedLeague) {
+            LOGGER.info(user.getName() + user.getDiscriminator() + " has stopped playing " + SHALL_NOT_BE_NAMED);
             var lastTime = this.removeEntryFromTracker(currentTimeTracker, user.getIdLong());
             this.addEntryToTracker(judgmentTracker, new Pair<>(user.getIdLong(),
                 judgmentTracker.getOrDefault(user.getIdLong(), 0L) + AntiLeagueHelper.getSysTimeInSecondsLong() - lastTime));
